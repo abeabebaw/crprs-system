@@ -1,0 +1,717 @@
+// Prisma Schema for CRPRS System
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [uuidOssp(map: "uuid-ossp", schema: "public")]
+}
+
+// ============================================
+// ENUMS
+// ============================================
+enum UserRole {
+  ADMIN
+  FDO
+  DO
+  RO
+  SRO
+  GO
+  SGO
+  PUBLIC
+
+  @@map("user_role")
+}
+
+enum ApplicationType {
+  FIRST_REGISTRATION
+  SUBSEQUENT_REGISTRATION
+  PARCEL_RESIZE
+  INFORMATION_PROVISION
+  TRANSFER_OF_RIGHT
+  MODIFY_PARTY
+  MODIFY_RRR
+  EASEMENT_REGISTRATION
+  BUILD_NEW_FEATURE
+  CHANGE_LAND_USE
+  CORRECTION_RRR
+  CORRECTION_PARTY
+  PARCEL_INFO_UPDATING
+
+  @@map("application_type")
+}
+
+enum ApplicationStatus {
+  SUBMITTED
+  READY_FOR_FILE_ATTACHMENT
+  FILE_ATTACHMENT_STARTING
+  FILE_ATTACHMENT_FINISHED
+  IN_PROGRESS
+  FINISHED
+  COMPLETED
+  WITHDRAWN
+
+  @@map("application_status")
+}
+
+enum TransactionStatus {
+  CREATED
+  INITIATED
+  IN_PROCESS
+  READY_FOR_APPROVAL
+  APPROVED
+  REJECTED
+  CANCELLED
+  NOT_IN_TASK
+  DELIVERED
+
+  @@map("transaction_status")
+}
+
+enum TransactionType {
+  REGISTRATION_OF_LEASEHOLD
+  REGISTRATION_OF_OLD_POSSESSION
+  REGISTRATION_OF_URBAN_FARM
+  REGISTRATION_OF_LANDHOLDING_NO_USERIGHT
+  MORTGAGE_REGISTRATION
+  MORTGAGE_CANCELLATION
+  COURT_INJUNCTION_REGISTRATION
+  COURT_INJUNCTION_CANCELLATION
+  GENERAL_RESTRICTION_REGISTRATION
+  GENERAL_RESTRICTION_CANCELLATION
+  GENERAL_RESPONSIBILITY_REGISTRATION
+  GENERAL_RESPONSIBILITY_CANCELLATION
+  PARCEL_SPLIT
+  PARCEL_MERGE
+  PARCEL_BOUNDARY_CHANGE
+  MODIFY_REGISTERED_PARTY
+  TRANSFER_PUBLIC_TO_PRIVATE
+  TRANSFER_PRIVATE_TO_PUBLIC
+  TRANSFER_PRIVATE_TO_PRIVATE
+  PRINT_REGISTRATION_EXTRACT
+  PRINT_CADASTRAL_EXTRACT
+  PRINT_NEW_TITLE
+  REPLACE_DAMAGED_TITLE
+  REPLACE_LOST_TITLE
+  MODIFY_REGISTERED_INJUNCTION
+  MODIFY_REGISTERED_RIGHT
+  MODIFY_REGISTERED_MORTGAGE
+  REGISTER_SERVITUDE
+  CREATE_BUILDING
+  CREATE_CORNER_POINT
+  CREATE_BOUNDARY_LINE
+  CHANGE_LAND_USE
+  CORRECTION_REGISTERED_RIGHT
+  CORRECTION_REGISTERED_INJUNCTION
+  CORRECTION_REGISTERED_MORTGAGE
+  CORRECTION_REGISTERED_PARTY
+  PARCEL_INFO_UPDATE
+
+  @@map("transaction_type")
+}
+
+enum PartyType {
+  NATURAL
+  LEGAL
+  GROUP
+
+  @@map("party_type")
+}
+
+enum RightType {
+  LEASEHOLD
+  OLD_POSSESSION
+  SUB_LEASE
+  URBAN_FARM
+  GOVERNMENT_OWNED
+  CONDOMINIUM
+  WITHOUT_USE_RIGHT
+
+  @@map("right_type")
+}
+
+enum DocumentCategory {
+  APPLICANT
+  PARCEL
+  RRR
+
+  @@map("document_category")
+}
+
+enum SexType {
+  M
+  F
+
+  @@map("sex_type")
+}
+
+// ============================================
+// MODELS
+// ============================================
+model User {
+  id                   String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  username             String        @unique @db.VarChar(100)
+  email                String        @unique @db.VarChar(150)
+  passwordHash         String        @map("password_hash") @db.VarChar(255)
+  fullName             String        @map("full_name") @db.VarChar(200)
+  phone                String?       @db.VarChar(20)
+  role                 UserRole
+  isActive             Boolean       @default(true) @map("is_active")
+  isOnline             Boolean       @default(false) @map("is_online")
+  lastLogin            DateTime?     @map("last_login")
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @default(now()) @updatedAt @map("updated_at")
+  
+  applications         Application[] @relation("SubmittedBy")
+  transactionsCreated  Transaction[] @relation("CreatedBy")
+  transactionsAssigned Transaction[] @relation("AssignedTo")
+  documents            Document[]    @relation("UploadedBy")
+  documentsCheckedOut  Document[]    @relation("CheckedOutBy")
+  announcements        Announcement[]
+  publicDocuments      PublicDocument[]
+  predefinedMaps       PredefinedMap[]
+  applicationHistory   ApplicationHistory[]
+  transactionHistory   TransactionHistory[]
+  auditLogs            AuditLog[]
+  sessions             Session[]
+
+  @@map("users")
+}
+
+model LookupType {
+  id          String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  typeName    String        @unique @map("type_name") @db.VarChar(100)
+  description String?
+  createdAt   DateTime      @default(now()) @map("created_at")
+  values      LookupValue[]
+
+  @@map("lookup_types")
+}
+
+model LookupValue {
+  id           String     @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  lookupTypeId String     @map("lookup_type_id") @db.Uuid
+  code         String     @db.VarChar(50)
+  value        String     @db.VarChar(255)
+  isActive     Boolean    @default(true) @map("is_active")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  
+  lookupType   LookupType @relation(fields: [lookupTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([lookupTypeId, code])
+  @@map("lookup_values")
+}
+
+model Parcel {
+  id               String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  parcelCode       String              @unique @map("parcel_code") @db.VarChar(50)
+  areaSqm          Decimal?            @map("area_sqm") @db.Decimal(15, 2)
+  landUse          String?             @map("land_use") @db.VarChar(100)
+  region           String?             @db.VarChar(100)
+  city             String?             @db.VarChar(100)
+  subCity          String?             @map("sub_city") @db.VarChar(100)
+  woreda           String?             @db.VarChar(50)
+  geometryWkt      String?             @map("geometry_wkt")
+  isRegistered     Boolean             @default(false) @map("is_registered")
+  registrationDate DateTime?           @map("registration_date")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @default(now()) @updatedAt @map("updated_at")
+  
+  applications     Application[]
+  transactions     Transaction[]
+  parties          Party[]
+  rights           Right[]
+  mortgages        Mortgage[]
+  courtInjunctions CourtInjunction[]
+  restrictions     GeneralRestriction[]
+  buildings        Building[]
+  borderPoints     BorderPoint[]
+  boundaryLines    BoundaryLine[]
+  servitudes       Servitude[]
+
+  @@index([parcelCode])
+  @@map("parcels")
+}
+
+model Application {
+  id                 String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  applicationNumber  String            @unique @map("application_number") @db.VarChar(50)
+  applicationType    ApplicationType   @map("application_type")
+  parcelId           String?           @map("parcel_id") @db.Uuid
+  status             ApplicationStatus @default(SUBMITTED)
+  applicantName      String            @map("applicant_name") @db.VarChar(200)
+  applicantType      String?           @map("applicant_type") @db.VarChar(50)
+  applicantAddress   String?           @map("applicant_address")
+  applicantPhone     String?           @map("applicant_phone") @db.VarChar(20)
+  applicantEmail     String?           @map("applicant_email") @db.VarChar(150)
+  applicantIdNumber  String?           @map("applicant_id_number") @db.VarChar(50)
+  applicantIdType    String?           @map("applicant_id_type") @db.VarChar(50)
+  description        String?
+  submittedBy        String?           @map("submitted_by") @db.Uuid
+  submittedAt        DateTime          @default(now()) @map("submitted_at")
+  withdrawnReason    String?           @map("withdrawn_reason")
+  withdrawnAt        DateTime?         @map("withdrawn_at")
+  completedAt        DateTime?         @map("completed_at")
+  deliveredAt        DateTime?         @map("delivered_at")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @default(now()) @updatedAt @map("updated_at")
+  
+  parcel             Parcel?           @relation(fields: [parcelId], references: [id], onDelete: Cascade)
+  submitter          User?             @relation("SubmittedBy", fields: [submittedBy], references: [id])
+  transactions       Transaction[]
+  documents          Document[]
+  history            ApplicationHistory[]
+
+  @@index([status])
+  @@index([parcelId])
+  @@index([applicationType])
+  @@map("applications")
+}
+
+model Transaction {
+  id                     String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  transactionNumber      String            @unique @map("transaction_number") @db.VarChar(50)
+  applicationId          String?           @map("application_id") @db.Uuid
+  parcelId               String?           @map("parcel_id") @db.Uuid
+  transactionType        TransactionType   @map("transaction_type")
+  status                 TransactionStatus @default(CREATED)
+  assignedTo             String?           @map("assigned_to") @db.Uuid
+  initiatedAt            DateTime?         @map("initiated_at")
+  inProcessAt            DateTime?         @map("in_process_at")
+  readyForApprovalAt     DateTime?         @map("ready_for_approval_at")
+  approvedAt             DateTime?         @map("approved_at")
+  rejectedAt             DateTime?         @map("rejected_at")
+  cancelledAt            DateTime?         @map("cancelled_at")
+  deliveredAt            DateTime?         @map("delivered_at")
+  rejectionReason        String?           @map("rejection_reason")
+  cancellationReason     String?           @map("cancellation_reason")
+  createdBy              String?           @map("created_by") @db.Uuid
+  createdAt              DateTime          @default(now()) @map("created_at")
+  updatedAt              DateTime          @default(now()) @updatedAt @map("updated_at")
+  
+  application            Application?      @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  parcel                 Parcel?           @relation(fields: [parcelId], references: [id])
+  assignedUser           User?             @relation("AssignedTo", fields: [assignedTo], references: [id])
+  creator                User?             @relation("CreatedBy", fields: [createdBy], references: [id])
+  documents              Document[]
+  rights                 Right[]
+  mortgages              Mortgage[]
+  courtInjunctions       CourtInjunction[]
+  generalRestrictions    GeneralRestriction[]
+  history                TransactionHistory[]
+
+  @@index([applicationId])
+  @@index([status])
+  @@index([assignedTo])
+  @@map("transactions")
+}
+
+model Party {
+  id                 String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  parcelId           String?   @map("parcel_id") @db.Uuid
+  partyType          PartyType @map("party_type")
+  firstName          String?   @map("first_name") @db.VarChar(100)
+  fatherName         String?   @map("father_name") @db.VarChar(100)
+  grandfatherName    String?   @map("grandfather_name") @db.VarChar(100)
+  sex                SexType?
+  dateOfBirth        DateTime? @map("date_of_birth") @db.Date
+  nationalId         String?   @map("national_id") @db.VarChar(50)
+  organizationName   String?   @map("organization_name") @db.VarChar(200)
+  organizationType   String?   @map("organization_type") @db.VarChar(100)
+  registrationNumber String?   @map("registration_number") @db.VarChar(50)
+  phone              String?   @db.VarChar(20)
+  email              String?   @db.VarChar(150)
+  address            String?
+  isUnderTutorship   Boolean   @default(false) @map("is_under_tutorship")
+  tutorName          String?   @map("tutor_name") @db.VarChar(200)
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at")
+  
+  parcel             Parcel?   @relation(fields: [parcelId], references: [id], onDelete: Cascade)
+  rights             Right[]
+  groupMembers       GroupPartyMember[]
+
+  @@map("parties")
+}
+
+model GroupPartyMember {
+  id              String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  groupPartyId    String    @map("group_party_id") @db.Uuid
+  firstName       String    @map("first_name") @db.VarChar(100)
+  fatherName      String?   @map("father_name") @db.VarChar(100)
+  grandfatherName String?   @map("grandfather_name") @db.VarChar(100)
+  sex             SexType?
+  nationalId      String?   @map("national_id") @db.VarChar(50)
+  sharePercentage Decimal?  @map("share_percentage") @db.Decimal(5, 2)
+  phone           String?   @db.VarChar(20)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  
+  groupParty      Party     @relation(fields: [groupPartyId], references: [id], onDelete: Cascade)
+
+  @@map("group_party_members")
+}
+
+model Right {
+  id               String      @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  parcelId         String?     @map("parcel_id") @db.Uuid
+  transactionId    String?     @map("transaction_id") @db.Uuid
+  rightType        RightType   @map("right_type")
+  holderPartyId    String?     @map("holder_party_id") @db.Uuid
+  acquisitionType  String?     @map("acquisition_type") @db.VarChar(100)
+  acquisitionDate  DateTime?   @map("acquisition_date") @db.Date
+  startDate        DateTime?   @map("start_date") @db.Date
+  endDate          DateTime?   @map("end_date") @db.Date
+  leasePeriodYears Int?        @map("lease_period_years")
+  leaseStartDate   DateTime?   @map("lease_start_date") @db.Date
+  leaseEndDate     DateTime?   @map("lease_end_date") @db.Date
+  groundRent       Decimal?    @map("ground_rent") @db.Decimal(15, 2)
+  description      String?
+  status           String      @default("ACTIVE") @db.VarChar(20)
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @default(now()) @updatedAt @map("updated_at")
+  
+  parcel           Parcel?     @relation(fields: [parcelId], references: [id], onDelete: Cascade)
+  transaction      Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  holder           Party?      @relation(fields: [holderPartyId], references: [id])
+
+  @@map("rights")
+}
+
+model Mortgage {
+  id                     String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  parcelId               String?      @map("parcel_id") @db.Uuid
+  transactionId          String?      @map("transaction_id") @db.Uuid
+  mortgageeName          String       @map("mortgagee_name") @db.VarChar(200)
+  mortgageeType          String?      @map("mortgagee_type") @db.VarChar(50)
+  mortgageAmount         Decimal      @map("mortgage_amount") @db.Decimal(18, 2)
+  currency               String       @default("ETB") @db.VarChar(10)
+  mortgageDate           DateTime     @map("mortgage_date") @db.Date
+  loanAgreementNumber    String?      @map("loan_agreement_number") @db.VarChar(100)
+  description            String?
+  status                 String       @default("ACTIVE") @db.VarChar(20)
+  cancelledAt            DateTime?    @map("cancelled_at")
+  cancellationReference  String?      @map("cancellation_reference") @db.VarChar(100)
+  createdAt              DateTime     @default(now()) @map("created_at")
+  updatedAt              DateTime     @default(now()) @updatedAt @map("updated_at")
+  
+  parcel                 Parcel?      @relation(fields: [parcelId], references: [id], onDelete: Cascade)
+  transaction            Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  @@map("mortgages")
+}
+
+model CourtInjunction {
+  id                    String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  parcelId              String?      @map("parcel_id") @db.Uuid
+  transactionId         String?      @map("transaction_id") @db.Uuid
+  courtName             String       @map("court_name") @db.VarChar(200)
+  caseNumber            String       @map("case_number") @db.VarChar(100)
+  injunctionDate        DateTime     @map("injunction_date") @db.Date
+  issuedBy              String?      @map("issued_by") @db.VarChar(200)
+  description           String?
+  status                String       @default("ACTIVE") @db.VarChar(20)
+  cancelledAt           DateTime?    @map("cancelled_at")
+  cancellationReference String?      @map("cancellation_reference") @db.VarChar(100)
+  createdAt             DateTime     @default(now()) @map("created_at")
+  updatedAt             DateTime     @default(now()) @updatedAt @map("updated_at")
+  
+  parcel                Parcel?      @relation(fields: [parcelId], references: [id], onDelete: Cascade)
+  transaction           Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  @@map("court_injunctions")
+}
+
+model GeneralRestriction {
+  id                    String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  parcelId              String?      @map("parcel_id") @db.Uuid
+  transactionId         String?      @map("transaction_id") @db.Uuid
+  restrictionType       String       @map("restriction_type") @db.VarChar(100)
+  description           String
+  imposedBy             String?      @map("imposed_by") @db.VarChar(200)
+  imposedDate           DateTime?    @map("imposed_date") @db.Date
+  status                String       @default("ACTIVE") @db.VarChar(20)
+  cancelledAt           DateTime?    @map("cancelled_at")
+  cancellationReference String?      @map("cancellation_reference") @db.VarChar(100)
+  createdAt             DateTime     @default(now()) @map("created_at")
+  updatedAt             DateTime     @default(now()) @updatedAt @map("updated_at")
+  
+  parcel                Parcel?      @relation(fields: [parcelId], references: [id], onDelete: Cascade)
+  transaction           Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+
+  @@map("general_restrictions")
+}
+
+model Document {
+  id                       String           @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  applicationId            String?          @map("application_id") @db.Uuid
+  transactionId            String?          @map("transaction_id") @db.Uuid
+  category                 DocumentCategory
+  documentType             String           @map("document_type") @db.VarChar(100)
+  referenceNumber          String?          @map("reference_number") @db.VarChar(100)
+  description              String?
+  filePath                 String           @map("file_path") @db.VarChar(500)
+  fileName                 String           @map("file_name") @db.VarChar(255)
+  fileSize                 BigInt?          @map("file_size")
+  mimeType                 String?          @map("mime_type") @db.VarChar(100)
+  uploadedBy               String?          @map("uploaded_by") @db.Uuid
+  physicalStorageLocation  String?          @map("physical_storage_location") @db.VarChar(200)
+  archived                 Boolean          @default(false)
+  archivedAt               DateTime?        @map("archived_at")
+  checkedOutBy             String?          @map("checked_out_by") @db.Uuid
+  checkedOutAt             DateTime?        @map("checked_out_at")
+  createdAt                DateTime         @default(now()) @map("created_at")
+  updatedAt                DateTime         @default(now()) @updatedAt @map("updated_at")
+  
+  application              Application?     @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  transaction              Transaction?     @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+  uploader                 User?            @relation("UploadedBy", fields: [uploadedBy], references: [id])
+  checkedOutUser           User?            @relation("CheckedOutBy", fields: [checkedOutBy], references: [id])
+
+  @@index([applicationId])
+  @@map("documents")
+}
+
+model RequiredDocument {
+  id               String            @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  applicationType  ApplicationType   @map("application_type")
+  documentType     String            @map("document_type") @db.VarChar(100)
+  documentCategory DocumentCategory  @map("document_category")
+  isMandatory      Boolean           @default(true) @map("is_mandatory")
+  createdAt        DateTime          @default(now()) @map("created_at")
+
+  @@unique([applicationType, documentType])
+  @@map("required_documents")
+}
+
+model BusinessRule {
+  id                   String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  ruleName             String   @map("rule_name") @db.VarChar(100)
+  landUse              String?  @map("land_use") @db.VarChar(100)
+  minParcelSizeSqm     Decimal? @map("min_parcel_size_sqm") @db.Decimal(15, 2)
+  maxParcelSizeSqm     Decimal? @map("max_parcel_size_sqm") @db.Decimal(15, 2)
+  minLeasePeriodYears  Int?     @map("min_lease_period_years")
+  maxLeasePeriodYears  Int?     @map("max_lease_period_years")
+  isActive             Boolean  @default(true) @map("is_active")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("business_rules")
+}
+
+model Building {
+  id                String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  parcelId          String?   @map("parcel_id") @db.Uuid
+  buildingNumber    String?   @map("building_number") @db.VarChar(50)
+  numberOfFloors    Int?      @map("number_of_floors")
+  constructionYear  Int?      @map("construction_year")
+  areaSqm           Decimal?  @map("area_sqm") @db.Decimal(15, 2)
+  geometryWkt       String?   @map("geometry_wkt")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  
+  parcel            Parcel?   @relation(fields: [parcelId], references: [id], onDelete: Cascade)
+
+  @@map("buildings")
+}
+
+model BorderPoint {
+  id          String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  parcelId    String?   @map("parcel_id") @db.Uuid
+  pointNumber String?   @map("point_number") @db.VarChar(50)
+  geometryWkt String?   @map("geometry_wkt")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  
+  parcel      Parcel?   @relation(fields: [parcelId], references: [id], onDelete: Cascade)
+
+  @@map("border_points")
+}
+
+model BoundaryLine {
+  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  parcelId   String?   @map("parcel_id") @db.Uuid
+  lineNumber String?   @map("line_number") @db.VarChar(50)
+  lengthM    Decimal?  @map("length_m") @db.Decimal(15, 2)
+  geometryWkt String?  @map("geometry_wkt")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  
+  parcel     Parcel?   @relation(fields: [parcelId], references: [id], onDelete: Cascade)
+
+  @@map("boundary_lines")
+}
+
+model Servitude {
+  id             String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  parcelId       String?   @map("parcel_id") @db.Uuid
+  servitudeType  String?   @map("servitude_type") @db.VarChar(100)
+  description    String?
+  geometryWkt    String?   @map("geometry_wkt")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  
+  parcel         Parcel?   @relation(fields: [parcelId], references: [id], onDelete: Cascade)
+
+  @@map("servitudes")
+}
+
+model Announcement {
+  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  title       String   @db.VarChar(300)
+  content     String
+  category    String   @default("NEWS") @db.VarChar(50)
+  isPublished Boolean  @default(true) @map("is_published")
+  publishedAt DateTime @default(now()) @map("published_at")
+  createdBy   String?  @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+  
+  creator     User?    @relation(fields: [createdBy], references: [id])
+
+  @@map("announcements")
+}
+
+model PublicDocument {
+  id               String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  title            String   @db.VarChar(300)
+  description      String?
+  documentCategory String?  @map("document_category") @db.VarChar(50)
+  filePath         String   @map("file_path") @db.VarChar(500)
+  fileName         String   @map("file_name") @db.VarChar(255)
+  fileSize         BigInt?  @map("file_size")
+  mimeType         String?  @map("mime_type") @db.VarChar(100)
+  uploadedBy       String?  @map("uploaded_by") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at")
+  
+  uploader         User?    @relation(fields: [uploadedBy], references: [id])
+
+  @@map("public_documents")
+}
+
+model Service {
+  id                  String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  serviceName         String   @map("service_name") @db.VarChar(200)
+  description         String?
+  requiredDocuments   String?  @map("required_documents")
+  feeAmount           Decimal? @map("fee_amount") @db.Decimal(15, 2)
+  processingTimeHours Int?     @map("processing_time_hours")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  @@map("services")
+}
+
+model MapLayer {
+  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  layerName   String   @map("layer_name") @db.VarChar(200)
+  layerType   String?  @map("layer_type") @db.VarChar(50)
+  sourceUrl   String?  @map("source_url")
+  isPublished Boolean  @default(true) @map("is_published")
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("map_layers")
+}
+
+model SystemConfiguration {
+  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  configType  String   @map("config_type") @db.VarChar(100)
+  data        Json
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("system_configurations")
+}
+
+model PredefinedMap {
+  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  mapName     String   @map("map_name") @db.VarChar(200)
+  description String?
+  layerIds    String[] @map("layer_ids") @db.Uuid
+  createdBy   String?  @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at")
+  
+  creator     User?    @relation(fields: [createdBy], references: [id])
+
+  @@map("predefined_maps")
+}
+
+model TransactionHistory {
+  id            String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  transactionId String             @map("transaction_id") @db.Uuid
+  fromStatus    TransactionStatus? @map("from_status")
+  toStatus      TransactionStatus  @map("to_status")
+  changedBy     String?            @map("changed_by") @db.Uuid
+  reason        String?
+  createdAt     DateTime           @default(now()) @map("created_at")
+  
+  transaction   Transaction        @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  user          User?              @relation(fields: [changedBy], references: [id])
+
+  @@map("transaction_history")
+}
+
+model ApplicationHistory {
+  id            String             @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  applicationId String             @map("application_id") @db.Uuid
+  fromStatus    ApplicationStatus? @map("from_status")
+  toStatus      ApplicationStatus  @map("to_status")
+  changedBy     String?            @map("changed_by") @db.Uuid
+  reason        String?
+  createdAt     DateTime           @default(now()) @map("created_at")
+  
+  application   Application        @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  user          User?              @relation(fields: [changedBy], references: [id])
+
+  @@map("application_history")
+}
+
+model AuditLog {
+  id            String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId        String?  @map("user_id") @db.Uuid
+  action        String   @db.VarChar(100)
+  entityType    String?  @map("entity_type") @db.VarChar(100)
+  entityId      String?  @map("entity_id") @db.VarChar(100)
+  previousValue Json?    @map("previous_value")
+  newValue      Json?    @map("new_value")
+  reason        String?
+  ipAddress     String?  @map("ip_address") @db.VarChar(50)
+  userAgent     String?  @map("user_agent")
+  correlationId String?  @map("correlation_id") @db.VarChar(100)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Session {
+  id           String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  refreshToken String    @unique @map("refresh_token") @db.VarChar(500)
+  userAgent    String?   @map("user_agent")
+  ipAddress    String?   @map("ip_address") @db.VarChar(50)
+  isValid      Boolean   @default(true) @map("is_valid")
+  expiresAt    DateTime  @map("expires_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model LoginAttempt {
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  username  String   @db.VarChar(100)
+  ipAddress String?  @map("ip_address") @db.VarChar(50)
+  success   Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([username, createdAt])
+  @@map("login_attempts")
+}
+
